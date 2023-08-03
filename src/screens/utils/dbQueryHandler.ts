@@ -66,3 +66,38 @@ export const updatePassword = async (data: Password, db: SQLiteDatabase) => {
 
   return db.executeSql(query, values);
 };
+
+export const insertMany = async (db: SQLiteDatabase, passwords: Password[]) => {
+  const query = `INSERT INTO ${tableName} (email, title, password, website, note, username) VALUES (?, ?, ?, ?, ?, ?)`;
+  try {
+    await db.transaction(async tx => {
+      const promises = passwords.map(item => {
+        return new Promise((resolve, reject) => {
+          tx.executeSql(
+            query,
+            [
+              item.email,
+              item.title,
+              item.password,
+              item.website,
+              item.note,
+              item.username,
+            ],
+            (_, resultSet) => {
+              resolve(resultSet);
+            },
+            (_, error) => {
+              console.log('Insertion error:', error);
+              reject(error);
+            },
+          );
+        });
+      });
+
+      // Execute all the insertions within the transaction using Promise.all
+      await Promise.all(promises.map(p => p.catch(e => e)));
+    });
+  } catch (error) {
+    console.log('Transaction error:', error);
+  }
+};

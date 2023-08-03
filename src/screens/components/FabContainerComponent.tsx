@@ -8,27 +8,56 @@ import {
 } from 'react-native-fs';
 import Papa from 'papaparse';
 import {DatabaseContext} from '../providers/DatabaseProvide';
-import {getAllPasswords} from '../utils/dbQueryHandler';
+import {getAllPasswords, insertMany} from '../utils/dbQueryHandler';
 import {Password} from '../utils/types';
 import DocumentPicker, {
   DocumentPickerResponse,
 } from 'react-native-document-picker';
 import {SecreteKeyContext} from '../providers/SecreteKeyProvider';
-import {decryptPassword} from '../utils/utils';
+import {decryptPassword, encryptPassword} from '../utils/utils';
+import {NotificationContext} from '../providers/NotificationProvider';
+import {PermissionsAndroid} from 'react-native';
 
 export const FabContainerComponent = (): JSX.Element => {
   const [isopen, setisOpen] = React.useState(false);
   const dbInstance = React.useContext(DatabaseContext);
   const secreteKey = React.useContext(SecreteKeyContext);
+  const dispatchNotification = React.useContext(NotificationContext);
 
   const onStateChange = ({open}: {open: boolean}) => {
     setisOpen(open);
   };
+  const requestCameraPermission = async () => {
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+        {
+          title: 'Please approve to write file',
+          message: 'This permission is needed to export the file',
+          buttonNeutral: 'Ask Me Later',
+          buttonNegative: 'Cancel',
+          buttonPositive: 'OK',
+        },
+      );
+      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+        return true;
+      } else {
+        return false;
+      }
+    } catch (err) {
+      console.warn(err);
+    }
+  };
 
   const exportToCsv = async () => {
-    console.log('check this');
     if (!dbInstance) return;
     try {
+      const isPermitted = requestCameraPermission();
+      if (!isPermitted) {
+        dispatchNotification &&
+          dispatchNotification('File can not be exported');
+        return;
+      }
       const data: Password[] = await getAllPasswords(dbInstance);
       const decryptedData = data.map((element: Password): Password => {
         return {
@@ -41,9 +70,12 @@ export const FabContainerComponent = (): JSX.Element => {
       // Define the file path and name
       const path = `${DownloadDirectoryPath}/data.csv`;
       await writeFile(path, csvData, 'utf8');
-      console.log('file downloaded in :', `${DownloadDirectoryPath}/data.csv`);
+      dispatchNotification &&
+        dispatchNotification(`file downloaded at download/data.csv`);
     } catch (error) {
       console.error(error);
+      dispatchNotification &&
+        dispatchNotification(`something went wrong, please report`);
     }
   };
 
@@ -51,23 +83,43 @@ export const FabContainerComponent = (): JSX.Element => {
     try {
       // Define the file path and name
       //const path = `${DocumentDirectoryPath}/data.csv`;
+      const isPermitted = requestCameraPermission();
+      if (!isPermitted) {
+        dispatchNotification &&
+          dispatchNotification('File can not be exported');
+        return;
+      }
       const res: DocumentPickerResponse[] = await DocumentPicker.pick({
         type: [DocumentPicker.types.allFiles],
       });
       console.log('------------res', res);
-      if (res.type === 'cancel') {
+      if (res[0].type === 'cancel') {
         // User canceled the file selection
         return;
       }
       // Read the CSV file
-      const fileData = await readFile(res.uri, 'utf8');
+      const fileData = await readFile(res[0].uri as string, 'utf8');
 
       // Parse the CSV data using papaparse
       const parsedData = Papa.parse(fileData, {header: true});
-      console.log('Parsed CSV data:', parsedData);
-
-      // Use the parsed data as needed
-      // For example, you can store it in state or display it in the component
+      console.log('Parsed CSV data:', parsedData.data);
+      const passwordList: Password[] = parsedData.data;
+      const encryptedPassword = passwordList.map(
+        (element: Password): Password => {
+          return {
+            email: element.email,
+            title: element.title,
+            username: element.username,
+            note: element.note,
+            website: element.website,
+            password: encryptPassword(element.password, secreteKey),
+          };
+        },
+      );
+      console.log(encryptedPassword);
+      const response = await insertMany(dbInstance, encryptedPassword);
+      dispatchNotification &&
+        dispatchNotification('File imported successfully');
     } catch (error) {
       console.error('Error reading CSV file:', error);
     }
