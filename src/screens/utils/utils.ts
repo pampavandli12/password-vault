@@ -18,6 +18,10 @@ export const decryptPassword = (
   encryptedPassword: string,
   s_key: string,
 ): string => {
-  var bytes = CryptoJS.AES.decrypt(encryptedPassword, s_key);
-  return bytes.toString(CryptoJS.enc.Utf8);
+  try {
+    var bytes = CryptoJS.AES.decrypt(encryptedPassword, s_key);
+    return bytes.toString(CryptoJS.enc.Utf8);
+  } catch (error) {
+    return ''; // Return an empty string or handle the error appropriately
+  }
 };

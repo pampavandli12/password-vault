@@ -1,6 +1,7 @@
 import React from 'react';
-import {StyleSheet, Text, View, Image} from 'react-native';
-import {useTheme} from 'react-native-paper';
+import {StyleSheet, View} from 'react-native';
+import {useTheme, Text} from 'react-native-paper';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 export const EmptyComponent = (): JSX.Element => {
   const theme = useTheme();
@@ -12,10 +13,8 @@ export const EmptyComponent = (): JSX.Element => {
         justifyContent: 'center',
         paddingTop: '50%',
       }}>
-      <Image
-        style={styles.imgStyle}
-        source={require('../../assets/empty.png')}
-      />
+      <Icon name="flask-empty-outline" size={55} style={{marginBottom: 10}} />
+
       <Text
         style={{
           color: theme.colors.onSurface,

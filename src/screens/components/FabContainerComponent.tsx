@@ -1,11 +1,6 @@
 import React from 'react';
 import {FAB, Portal} from 'react-native-paper';
-import {
-  writeFile,
-  DownloadDirectoryPath,
-  readFile,
-  DocumentDirectoryPath,
-} from 'react-native-fs';
+import {writeFile, DownloadDirectoryPath, readFile} from 'react-native-fs';
 import Papa from 'papaparse';
 import {DatabaseContext} from '../providers/DatabaseProvide';
 import {getAllPasswords, insertMany} from '../utils/dbQueryHandler';
@@ -16,9 +11,14 @@ import DocumentPicker, {
 import {SecreteKeyContext} from '../providers/SecreteKeyProvider';
 import {decryptPassword, encryptPassword} from '../utils/utils';
 import {NotificationContext} from '../providers/NotificationProvider';
+import * as ScopedStorage from 'react-native-scoped-storage';
 import {PermissionsAndroid} from 'react-native';
 
-export const FabContainerComponent = (): JSX.Element => {
+export const FabContainerComponent = ({
+  refreshPasswordList,
+}: {
+  refreshPasswordList: () => void;
+}): JSX.Element => {
   const [isopen, setisOpen] = React.useState(false);
   const dbInstance = React.useContext(DatabaseContext);
   const secreteKey = React.useContext(SecreteKeyContext);
@@ -27,16 +27,15 @@ export const FabContainerComponent = (): JSX.Element => {
   const onStateChange = ({open}: {open: boolean}) => {
     setisOpen(open);
   };
-  const requestCameraPermission = async () => {
+
+  const askPermission = async () => {
     try {
       const granted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
         {
-          title: 'Please approve to write file',
-          message: 'This permission is needed to export the file',
-          buttonNeutral: 'Ask Me Later',
-          buttonNegative: 'Cancel',
-          buttonPositive: 'OK',
+          title: 'Approve',
+          message: 'Application need access to file storage',
+          buttonPositive: 'Approve',
         },
       );
       if (granted === PermissionsAndroid.RESULTS.GRANTED) {
@@ -48,17 +47,11 @@ export const FabContainerComponent = (): JSX.Element => {
       console.warn(err);
     }
   };
-
   const exportToCsv = async () => {
     if (!dbInstance) return;
     try {
-      const isPermitted = requestCameraPermission();
-      if (!isPermitted) {
-        dispatchNotification &&
-          dispatchNotification('File can not be exported');
-        return;
-      }
       const data: Password[] = await getAllPasswords(dbInstance);
+
       const decryptedData = data.map((element: Password): Password => {
         return {
           ...element,
@@ -66,43 +59,44 @@ export const FabContainerComponent = (): JSX.Element => {
         };
       });
       const csvData = Papa.unparse(decryptedData);
+      const isPermitted = await askPermission();
+      if (isPermitted) {
+        const path = `${DownloadDirectoryPath}/data.csv`;
+        await writeFile(path, csvData, 'utf8');
+      } else {
+        let dir = await ScopedStorage.openDocumentTree(true);
 
-      // Define the file path and name
-      const path = `${DownloadDirectoryPath}/data.csv`;
-      await writeFile(path, csvData, 'utf8');
+        await ScopedStorage.writeFile(
+          dir.uri,
+          csvData,
+          'password.csv',
+          '.csv',
+          'utf8',
+        );
+      }
       dispatchNotification &&
-        dispatchNotification(`file downloaded at download/data.csv`);
+        dispatchNotification(`file downloaded successfully`);
     } catch (error) {
-      console.error(error);
       dispatchNotification &&
-        dispatchNotification(`something went wrong, please report`);
+        dispatchNotification(`Something went wrong, please report`);
     }
   };
 
   const importFile = async () => {
     try {
-      // Define the file path and name
-      //const path = `${DocumentDirectoryPath}/data.csv`;
-      const isPermitted = requestCameraPermission();
-      if (!isPermitted) {
-        dispatchNotification &&
-          dispatchNotification('File can not be exported');
-        return;
-      }
       const res: DocumentPickerResponse[] = await DocumentPicker.pick({
         type: [DocumentPicker.types.allFiles],
       });
-      console.log('------------res', res);
       if (res[0].type === 'cancel') {
         // User canceled the file selection
+        dispatchNotification &&
+          dispatchNotification('You have not selected any file');
         return;
       }
       // Read the CSV file
       const fileData = await readFile(res[0].uri as string, 'utf8');
-
       // Parse the CSV data using papaparse
       const parsedData = Papa.parse(fileData, {header: true});
-      console.log('Parsed CSV data:', parsedData.data);
       const passwordList: Password[] = parsedData.data;
       const encryptedPassword = passwordList.map(
         (element: Password): Password => {
@@ -120,8 +114,10 @@ export const FabContainerComponent = (): JSX.Element => {
       const response = await insertMany(dbInstance, encryptedPassword);
       dispatchNotification &&
         dispatchNotification('File imported successfully');
+      refreshPasswordList();
     } catch (error) {
-      console.error('Error reading CSV file:', error);
+      dispatchNotification &&
+        dispatchNotification('Something went wrong, please report');
     }
   };
 
