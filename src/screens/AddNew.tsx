@@ -19,6 +19,7 @@ import {ScrollView} from 'react-native-gesture-handler';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
 import {NotificationContext} from './providers/NotificationProvider';
+import {database} from '../model/schema';
 
 const intialState: Password = {
   email: '',
@@ -74,6 +75,16 @@ export const AddNewComponent = ({navigation, route}) => {
           dispatchNotification &&
             dispatchNotification('Something went wrong, please report');
         }
+
+        const test_add = await database.get('passwords').create(password => {
+          password.title = values.title;
+          password.email = values.email;
+          password.username = values.username;
+          password.title = values.title;
+          password.website = values.website;
+          password.notes = values.note;
+        });
+        console.log('----------------test_add', test_add);
       }
       console.log('is reset calling?');
       actions.resetForm({
